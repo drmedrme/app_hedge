@@ -1,0 +1,71 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.env/
+.venv/
+ENV/
+env/
+env.bak/
+*.env
+
+# Flask cache and logs
+instance/
+*.log
+*.db
+*.sqlite3
+
+# Pytest / Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# MyPy / Pylint / Pyre / Pyright
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pyright/
+
+# VSCode / IDE config
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Mac / Linux / Windows system files
+.DS_Store
+Thumbs.db
+
+# Docker / Build artifacts
+*.egg-info/
+dist/
+build/
+*.egg
+*.bak
+*.tar.gz
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Local app uploads (optional — if Flask saves files locally)
+uploads/
+
+# SQLite files (if used for development)
+*.sqlite
+*.sqlite3
+
+# Compiled translations (Flask-Babel)
+*.mo
+
+# Celery beat schedule
+celerybeat-schedule
+
+# Coverage reports
+coverage.xml
+
+# Flask-Migrate migrations
+migrations/
