@@ -1,0 +1,735 @@
+This file contains the directory structure and files of a web application.
+Supports Flask, FastAPI, React, Next.js, Vue, and other modern web frameworks.
+Excludes dependencies, build artifacts, environment files, JS chunk files, and other non-essential files.
+Limited to 500KB for optimal performance.
+
+Directory Structure of the App 'app_te_china':
+
+app_te_china/
+    README.md
+    app.py
+    templates/
+        index.html
+
+File Contents:
+
+File: app_te_china/README.md
+Contents:
+# China Market Hedge Calculator
+
+A Flask-based web application for calculating hedge positions to offset Chinese market exposure in UK sterling share portfolios.
+
+## Overview
+
+This tool helps traders who hold UK sterling shares calculate appropriate hedge positions using Chinese market instruments. It:
+
+1. Analyzes your UK portfolio for China exposure
+2. Calculates optimal hedge ratios based on correlations and volatility
+3. Recommends specific Chinese instruments and position sizes for hedging
+
+## How It Works
+
+### China Exposure Estimation
+
+The program estimates China exposure for UK shares based on:
+- **Sector Analysis**: Different sectors have varying levels of China exposure (e.g., Technology and Basic Materials typically have higher exposure)
+- **Market Capitalization**: Larger companies often have more global/China exposure
+- **Default Assumptions**: If data is unavailable, assumes 15% China exposure
+
+### Hedging Calculation
+
+The hedge calculation uses:
+1. **Correlation Analysis**: Measures how UK shares move relative to Chinese instruments
+2. **Volatility Matching**: Adjusts hedge size based on relative volatilities
+3. **Optimal Hedge Ratio Formula**: `Hedge Ratio = (UK Volatility / China Volatility) × Correlation`
+
+### Recommendations
+
+The tool provides:
+- **Direction**: Whether to go LONG or SHORT the Chinese instrument
+- **Notional Amount**: How much of each Chinese instrument to trade
+- **Effectiveness Score**: How well the hedge is expected to work (based on correlation strength)
+
+## Installation
+
+1. Clone or download this repository
+2. Install Python dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+## Running the Application
+
+1. Activate your virtual environment (if using one):
+   ```bash
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+2. Start the Flask server:
+   ```bash
+   python app.py
+   ```
+
+3. Open your web browser and go to: `http://localhost:5000`
+
+## Using the Application
+
+### Step 1: Enter UK Portfolio
+
+1. Enter your UK share tickers (e.g., `BP.L`, `HSBA.L`, `RIO.L`)
+   - Use `.L` suffix for London Stock Exchange listings
+2. Enter the position value in GBP for each share
+3. Click "Add UK Share" to add more positions
+
+### Step 2: Enter Chinese Hedge Candidates
+
+1. Enter Chinese market tickers you want to consider for hedging:
+   - Examples: `BABA` (Alibaba), `BIDU` (Baidu), `000001.SS` (Shanghai index)
+   - ETFs: `FXI` (China Large-Cap ETF), `ASHR` (China A-shares)
+2. Click "Add China Hedge" to add more candidates
+
+### Step 3: Calculate Hedges
+
+Click "Calculate Hedge Requirements" to:
+- Analyze your UK portfolio's China exposure
+- Calculate optimal hedge ratios
+- Get specific recommendations for each Chinese instrument
+
+### Step 4: Interpret Results
+
+**UK Portfolio Analysis Table:**
+- Shows each UK position's estimated China exposure
+- Displays volatility and China-exposed value
+
+**Hedge Recommendations Table:**
+- **Ticker**: The Chinese instrument to trade
+- **Correlation**: How closely it moves with your UK portfolio (-1 to +1)
+- **Hedge Ratio**: The multiplier for calculating position size
+- **Direction**: 
+  - SHORT = Sell the Chinese instrument (for positive correlation)
+  - LONG = Buy the Chinese instrument (for negative correlation)
+- **Notional**: The recommended position size in GBP
+- **Effectiveness**: Higher percentage = better hedge (based on correlation strength)
+
+## Example Scenario
+
+**Portfolio:**
+- £100,000 in HSBC (HSBA.L) - Banking sector
+- £50,000 in Rio Tinto (RIO.L) - Mining sector
+- £75,000 in Unilever (ULVR.L) - Consumer goods
+
+**Estimated China Exposure:**
+- HSBC: 15% = £15,000
+- Rio Tinto: 40% = £20,000
+- Unilever: 10% = £7,500
+- **Total: £42,500**
+
+**Recommended Hedge (example):**
+- SHORT £35,000 of FXI (China ETF) if correlation is positive
+- This would offset most of your £42,500 China exposure
+
+## Important Notes
+
+1. **Data Source**: Uses Yahoo Finance for market data (6 months historical)
+2. **Correlation Period**: Calculations based on 6-month daily returns
+3. **Simplifications**: 
+   - China exposure estimates are simplified
+   - Actual exposure may vary based on company-specific factors
+   - Consider transaction costs and market impact
+
+4. **Risk Management**:
+   - These are theoretical calculations
+   - Always consider your risk tolerance
+   - Hedges may not be perfect due to basis risk
+   - Monitor and adjust positions regularly
+
+## Troubleshooting
+
+**"Could not fetch data" errors:**
+- Check ticker symbols are correct
+- Ensure internet connection is stable
+- Some tickers may not be available on Yahoo Finance
+
+**Unexpected results:**
+- Low correlations may indicate poor hedge candidates
+- Try different Chinese instruments (indices, ETFs, ADRs)
+- Consider sector-specific Chinese stocks for better correlation
+
+## Advanced Usage
+
+For more accurate China exposure estimates, you could:
+1. Research each company's actual China revenue percentage
+2. Manually adjust the exposure estimates in the code
+3. Use financial reports to determine true geographic exposure
+
+## Disclaimer
+
+This tool provides theoretical hedge calculations for educational and analytical purposes. Always consult with financial professionals and consider all risks before implementing any trading strategy.
+
+==================================================
+
+File: app_te_china/app.py
+Contents:
+from flask import Flask, render_template, request, jsonify
+import numpy as np
+import pandas as pd
+import yfinance as yf
+from datetime import datetime, timedelta
+from scipy import stats
+
+app = Flask(__name__)
+
+def calculate_correlation(uk_returns, china_returns):
+    """Calculate correlation between UK and Chinese returns"""
+    if len(uk_returns) != len(china_returns):
+        min_len = min(len(uk_returns), len(china_returns))
+        uk_returns = uk_returns[-min_len:]
+        china_returns = china_returns[-min_len:]
+    
+    correlation = np.corrcoef(uk_returns, china_returns)[0, 1]
+    return correlation
+
+def calculate_hedge_ratio(uk_volatility, china_volatility, correlation):
+    """Calculate optimal hedge ratio using variance minimization"""
+    hedge_ratio = (uk_volatility / china_volatility) * correlation
+    return hedge_ratio
+
+def fetch_stock_data(ticker, period='6mo'):
+    """Fetch historical stock data"""
+    try:
+        stock = yf.Ticker(ticker)
+        data = stock.history(period=period)
+        if data.empty:
+            return None
+        return data
+    except Exception as e:
+        print(f"Error fetching data for {ticker}: {e}")
+        return None
+
+def calculate_returns(price_data):
+    """Calculate daily returns from price data"""
+    returns = price_data['Close'].pct_change().dropna()
+    return returns
+
+def calculate_china_exposure(uk_ticker):
+    """Estimate China exposure based on sector and company profile"""
+    # This is a simplified estimation - in reality, you'd use more sophisticated methods
+    china_exposed_sectors = {
+        'Technology': 0.3,
+        'Basic Materials': 0.4,
+        'Consumer Cyclical': 0.25,
+        'Industrials': 0.35,
+        'Energy': 0.2,
+        'Financial Services': 0.15,
+        'Healthcare': 0.1,
+        'Consumer Defensive': 0.1,
+        'Utilities': 0.05,
+        'Real Estate': 0.1,
+        'Communication Services': 0.2
+    }
+    
+    try:
+        stock = yf.Ticker(uk_ticker)
+        info = stock.info
+        sector = info.get('sector', 'Unknown')
+        
+        # Base exposure from sector
+        base_exposure = china_exposed_sectors.get(sector, 0.15)
+        
+        # Adjust based on market cap (larger companies often have more global exposure)
+        market_cap = info.get('marketCap', 0)
+        if market_cap > 100e9:  # > 100B
+            base_exposure *= 1.3
+        elif market_cap > 10e9:  # > 10B
+            base_exposure *= 1.1
+            
+        return min(base_exposure, 0.5)  # Cap at 50% exposure
+    except:
+        return 0.15  # Default exposure
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/calculate_hedge', methods=['POST'])
+def calculate_hedge():
+    try:
+        data = request.json
+        uk_shares = data.get('uk_shares', [])
+        china_hedges = data.get('china_hedges', [])
+        position_values = data.get('position_values', {})
+        
+        results = {
+            'uk_portfolio': [],
+            'hedge_recommendations': [],
+            'total_china_exposure': 0,
+            'errors': []
+        }
+        
+        # Analyze UK portfolio
+        total_portfolio_value = 0
+        weighted_china_exposure = 0
+        
+        for share in uk_shares:
+            ticker = share['ticker']
+            value = float(position_values.get(ticker, 0))
+            
+            # Fetch data
+            uk_data = fetch_stock_data(ticker)
+            if uk_data is None:
+                results['errors'].append(f"Could not fetch data for {ticker}")
+                continue
+                
+            # Calculate returns and volatility
+            returns = calculate_returns(uk_data)
+            volatility = returns.std() * np.sqrt(252)  # Annualized
+            
+            # Estimate China exposure
+            china_exposure = calculate_china_exposure(ticker)
+            china_exposed_value = value * china_exposure
+            
+            results['uk_portfolio'].append({
+                'ticker': ticker,
+                'value': value,
+                'volatility': round(volatility * 100, 2),
+                'china_exposure': round(china_exposure * 100, 2),
+                'china_exposed_value': round(china_exposed_value, 2)
+            })
+            
+            total_portfolio_value += value
+            weighted_china_exposure += china_exposed_value
+        
+        results['total_china_exposure'] = round(weighted_china_exposure, 2)
+        
+        # Calculate hedge recommendations for each Chinese instrument
+        for hedge in china_hedges:
+            hedge_ticker = hedge['ticker']
+            
+            # Fetch Chinese stock data
+            china_data = fetch_stock_data(hedge_ticker)
+            if china_data is None:
+                results['errors'].append(f"Could not fetch data for {hedge_ticker}")
+                continue
+            
+            china_returns = calculate_returns(china_data)
+            china_volatility = china_returns.std() * np.sqrt(252)
+            
+            # Calculate average correlation with UK portfolio
+            correlations = []
+            for uk_share in results['uk_portfolio']:
+                uk_ticker = uk_share['ticker']
+                uk_data = fetch_stock_data(uk_ticker)
+                if uk_data is not None:
+                    uk_returns = calculate_returns(uk_data)
+                    corr = calculate_correlation(uk_returns.values, china_returns.values)
+                    if not np.isnan(corr):
+                        correlations.append(corr)
+            
+            avg_correlation = np.mean(correlations) if correlations else 0
+            
+            # Calculate hedge ratio
+            portfolio_volatility = np.mean([share['volatility']/100 for share in results['uk_portfolio']])
+            hedge_ratio = calculate_hedge_ratio(portfolio_volatility, china_volatility, avg_correlation)
+            
+            # Calculate hedge size
+            hedge_notional = weighted_china_exposure * abs(hedge_ratio)
+            
+            # Determine hedge effectiveness
+            effectiveness = abs(avg_correlation) * 100
+            
+            results['hedge_recommendations'].append({
+                'ticker': hedge_ticker,
+                'correlation': round(avg_correlation, 3),
+                'volatility': round(china_volatility * 100, 2),
+                'hedge_ratio': round(hedge_ratio, 3),
+                'hedge_notional': round(hedge_notional, 2),
+                'effectiveness': round(effectiveness, 2),
+                'direction': 'SHORT' if hedge_ratio > 0 else 'LONG'
+            })
+        
+        # Sort recommendations by effectiveness
+        results['hedge_recommendations'].sort(key=lambda x: x['effectiveness'], reverse=True)
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(host='192.168.2.244', port=1850, debug=True)
+
+==================================================
+
+File: app_te_china/templates/index.html
+Contents:
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>China Hedge Calculator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .input-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .share-input {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+        input[type="text"], input[type="number"] {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .ticker-input {
+            width: 150px;
+        }
+        .value-input {
+            width: 150px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .add-button {
+            background-color: #28a745;
+            margin-top: 10px;
+        }
+        .add-button:hover {
+            background-color: #218838;
+        }
+        .calculate-button {
+            width: 100%;
+            margin-top: 20px;
+            background-color: #17a2b8;
+        }
+        .calculate-button:hover {
+            background-color: #138496;
+        }
+        .results {
+            margin-top: 30px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        .error {
+            color: #dc3545;
+            margin-top: 10px;
+        }
+        .success {
+            color: #28a745;
+        }
+        .warning {
+            color: #ffc107;
+        }
+        .remove-btn {
+            background-color: #dc3545;
+            padding: 5px 10px;
+            font-size: 14px;
+        }
+        .remove-btn:hover {
+            background-color: #c82333;
+        }
+        .exposure-summary {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            font-size: 18px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>China Market Hedge Calculator</h1>
+        
+        <div class="input-section">
+            <h2>UK Sterling Shares Portfolio</h2>
+            <div id="uk-shares-container">
+                <div class="share-input">
+                    <input type="text" class="ticker-input" placeholder="UK Ticker (e.g., BP.L)" />
+                    <input type="number" class="value-input" placeholder="Position Value (£)" />
+                    <button class="remove-btn" onclick="removeShare(this)">Remove</button>
+                </div>
+            </div>
+            <button class="add-button" onclick="addUKShare()">Add UK Share</button>
+        </div>
+        
+        <div class="input-section">
+            <h2>Chinese Hedge Candidates</h2>
+            <div id="china-hedges-container">
+                <div class="share-input">
+                    <input type="text" class="ticker-input" placeholder="China Ticker (e.g., BABA)" />
+                    <button class="remove-btn" onclick="removeHedge(this)">Remove</button>
+                </div>
+            </div>
+            <button class="add-button" onclick="addChinaHedge()">Add China Hedge</button>
+        </div>
+        
+        <button class="calculate-button" onclick="calculateHedge()">Calculate Hedge Requirements</button>
+        
+        <div id="results" class="results" style="display: none;">
+            <h2>Results</h2>
+            
+            <div class="exposure-summary" id="exposure-summary"></div>
+            
+            <h3>UK Portfolio Analysis</h3>
+            <table id="uk-portfolio-table">
+                <thead>
+                    <tr>
+                        <th>Ticker</th>
+                        <th>Position Value (£)</th>
+                        <th>Volatility (%)</th>
+                        <th>China Exposure (%)</th>
+                        <th>China Exposed Value (£)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            
+            <h3>Hedge Recommendations</h3>
+            <table id="hedge-recommendations-table">
+                <thead>
+                    <tr>
+                        <th>Hedge Ticker</th>
+                        <th>Correlation</th>
+                        <th>Volatility (%)</th>
+                        <th>Hedge Ratio</th>
+                        <th>Direction</th>
+                        <th>Notional (£)</th>
+                        <th>Effectiveness (%)</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+            
+            <div id="errors" class="error"></div>
+        </div>
+    </div>
+
+    <script>
+        function addUKShare() {
+            const container = document.getElementById('uk-shares-container');
+            const newInput = document.createElement('div');
+            newInput.className = 'share-input';
+            newInput.innerHTML = `
+                <input type="text" class="ticker-input" placeholder="UK Ticker (e.g., BP.L)" />
+                <input type="number" class="value-input" placeholder="Position Value (£)" />
+                <button class="remove-btn" onclick="removeShare(this)">Remove</button>
+            `;
+            container.appendChild(newInput);
+        }
+
+        function addChinaHedge() {
+            const container = document.getElementById('china-hedges-container');
+            const newInput = document.createElement('div');
+            newInput.className = 'share-input';
+            newInput.innerHTML = `
+                <input type="text" class="ticker-input" placeholder="China Ticker (e.g., BABA)" />
+                <button class="remove-btn" onclick="removeHedge(this)">Remove</button>
+            `;
+            container.appendChild(newInput);
+        }
+
+        function removeShare(button) {
+            const shareInputs = document.querySelectorAll('#uk-shares-container .share-input');
+            if (shareInputs.length > 1) {
+                button.parentElement.remove();
+            }
+        }
+
+        function removeHedge(button) {
+            const hedgeInputs = document.querySelectorAll('#china-hedges-container .share-input');
+            if (hedgeInputs.length > 1) {
+                button.parentElement.remove();
+            }
+        }
+
+        async function calculateHedge() {
+            // Collect UK shares data
+            const ukShares = [];
+            const positionValues = {};
+            const ukShareInputs = document.querySelectorAll('#uk-shares-container .share-input');
+            
+            ukShareInputs.forEach(input => {
+                const ticker = input.querySelector('.ticker-input').value.trim();
+                const value = input.querySelector('.value-input').value.trim();
+                if (ticker && value) {
+                    ukShares.push({ ticker });
+                    positionValues[ticker] = parseFloat(value);
+                }
+            });
+
+            // Collect China hedges data
+            const chinaHedges = [];
+            const chinaHedgeInputs = document.querySelectorAll('#china-hedges-container .share-input');
+            
+            chinaHedgeInputs.forEach(input => {
+                const ticker = input.querySelector('.ticker-input').value.trim();
+                if (ticker) {
+                    chinaHedges.push({ ticker });
+                }
+            });
+
+            if (ukShares.length === 0 || chinaHedges.length === 0) {
+                alert('Please enter at least one UK share and one China hedge candidate');
+                return;
+            }
+
+            // Show loading state
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.style.display = 'block';
+            resultsDiv.innerHTML = '<h2>Calculating...</h2><p>Fetching market data and computing hedge ratios...</p>';
+
+            try {
+                const response = await fetch('/calculate_hedge', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        uk_shares: ukShares,
+                        china_hedges: chinaHedges,
+                        position_values: positionValues
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    displayResults(data);
+                } else {
+                    resultsDiv.innerHTML = `<div class="error">Error: ${data.error}</div>`;
+                }
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.style.display = 'block';
+            resultsDiv.innerHTML = `
+                <h2>Results</h2>
+                <div class="exposure-summary" id="exposure-summary">
+                    Total China Exposure: £${data.total_china_exposure.toLocaleString()}
+                </div>
+                
+                <h3>UK Portfolio Analysis</h3>
+                <table id="uk-portfolio-table">
+                    <thead>
+                        <tr>
+                            <th>Ticker</th>
+                            <th>Position Value (£)</th>
+                            <th>Volatility (%)</th>
+                            <th>China Exposure (%)</th>
+                            <th>China Exposed Value (£)</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                
+                <h3>Hedge Recommendations</h3>
+                <table id="hedge-recommendations-table">
+                    <thead>
+                        <tr>
+                            <th>Hedge Ticker</th>
+                            <th>Correlation</th>
+                            <th>Volatility (%)</th>
+                            <th>Hedge Ratio</th>
+                            <th>Direction</th>
+                            <th>Notional (£)</th>
+                            <th>Effectiveness (%)</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                
+                <div id="errors" class="error"></div>
+            `;
+
+            // Populate UK portfolio table
+            const ukTableBody = document.querySelector('#uk-portfolio-table tbody');
+            data.uk_portfolio.forEach(share => {
+                const row = ukTableBody.insertRow();
+                row.innerHTML = `
+                    <td>${share.ticker}</td>
+                    <td>£${share.value.toLocaleString()}</td>
+                    <td>${share.volatility}%</td>
+                    <td>${share.china_exposure}%</td>
+                    <td>£${share.china_exposed_value.toLocaleString()}</td>
+                `;
+            });
+
+            // Populate hedge recommendations table
+            const hedgeTableBody = document.querySelector('#hedge-recommendations-table tbody');
+            data.hedge_recommendations.forEach(hedge => {
+                const row = hedgeTableBody.insertRow();
+                const effectivenessClass = hedge.effectiveness > 50 ? 'success' : 
+                                         hedge.effectiveness > 25 ? 'warning' : '';
+                row.innerHTML = `
+                    <td>${hedge.ticker}</td>
+                    <td>${hedge.correlation}</td>
+                    <td>${hedge.volatility}%</td>
+                    <td>${Math.abs(hedge.hedge_ratio)}</td>
+                    <td><strong>${hedge.direction}</strong></td>
+                    <td>£${hedge.hedge_notional.toLocaleString()}</td>
+                    <td class="${effectivenessClass}">${hedge.effectiveness}%</td>
+                `;
+            });
+
+            // Display errors if any
+            if (data.errors && data.errors.length > 0) {
+                document.getElementById('errors').innerHTML = 
+                    '<h4>Errors:</h4>' + data.errors.map(e => `<p>${e}</p>`).join('');
+            }
+        }
+    </script>
+</body>
+</html>
+
+==================================================
+
